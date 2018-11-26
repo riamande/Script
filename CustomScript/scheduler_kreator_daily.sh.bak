@@ -1,0 +1,52 @@
+# scheduler kreator-daily  , 1st day of the month until yesterday
+fjb=`mysql -h 172.20.0.73 -uriamande -pchopinnocturne92 forum  -r -s -N -e "select child_list from forum_list where forum_id=25;" |sed -e 's$\,\-1$$g'`
+bot="746,753,854,730,851,864"
+
+
+start_date=`date +%Y%m01`
+akhir=`date  +%Y%m%d`
+if [ $start_date -eq $akhir ]
+  then
+  start_date=`date -d "- 1 month" +%Y%m01`
+fi
+month_start=`date -d "$start_date" +%s`
+date_end=`date -d "$akhir" +%s`
+while [ $month_start -lt $date_end ]
+do
+end_date=`expr $month_start + 86400`
+date_name=`date -d@$month_start +%Y%m%d`
+OID_START=`mongo 172.16.0.88:27018/kaskus_forum -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "Math.floor($month_start).toString(16) + '0000000000000000';" |grep -v 'MongoDB shell\|connecting'`
+OID_END=`mongo 172.16.0.88:27018/kaskus_forum -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "Math.floor($end_date).toString(16) + '0000000000000000';" |grep -v 'MongoDB shell\|connecting'`
+date_name=`date -d@$month_start +%Y%m%d`
+data_dir="/home/rully/kreator_report/daily"
+
+echo '"Date","total userid who create thread","total thread","total user register creator","total userid kreator","total thread creator","total user kreator who created thread approve","total thread approve","total user kreator who created thread pending","total thread pending"' > $data_dir/all_authordaily.csv
+
+
+#jumlah user , jumlah thread
+mongo 172.16.0.88:27018/kaskus_forum -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread.find({forum_id:{\$nin:[$fjb,$bot,0]}, dateline:{\$gt:$month_start,\$lt:$end_date}},{_id:0,post_userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |cut -d '"' -f4 > $data_dir/thread_authordaily.temp
+#Total registered creator
+#mongo 172.20.0.91/kaskus_user_log -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.user_account_activity_log.find({_id:{\$lt:ObjectId('$OID_END')},processname:'accept_vtm_request'},{user_id:1,_id:0}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/regiscreator_authordaily.temp
+mysql -h 172.20.0.73 -uriamande -pchopinnocturne92 forum -r -s -N -e "select user_id from forum_user_setting where vtm_status=1;" > $data_dir/regiscreator_authordaily.temp
+
+jumlahuser=`cat $data_dir/thread_authordaily.temp |sort |uniq |wc -l`
+jumlahthread=`cat $data_dir/thread_authordaily.temp |wc -l`
+jumlahregis=`cat $data_dir/regiscreator_authordaily.temp |wc -l`
+
+#thread all,approve,pending.
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$month_start,\$lt:$end_date}},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/threadall_authordaily.temp
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$month_start,\$lt:$end_date},current_status:2},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/thread_approve_authordaily.temp
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$month_start,\$lt:$end_date},current_status:1},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/thread_pending_authordaily.temp
+
+total1=`cat $data_dir/threadall_authordaily.temp |sort |uniq |wc -l`
+total2=`cat $data_dir/threadall_authordaily.temp |wc -l`
+total3=`cat $data_dir/thread_approve_authordaily.temp |sort |uniq |wc -l`
+total4=`cat $data_dir/thread_approve_authordaily.temp |wc -l`
+total5=`cat $data_dir/thread_pending_authordaily.temp |sort |uniq |wc -l`
+total6=`cat $data_dir/thread_pending_authordaily.temp |wc -l`
+
+month_start="$end_date"
+echo '"'$date_name'","'$jumlahuser'","'$jumlahthread'","'$jumlahregis'","'$total1'","'$total2'","'$total3'","'$total4'","'$total5'","'$total6'"' >> $data_dir/all_authordaily.csv
+done
+
+sendemail -f statistic@kaskusnetworks.com -t rully@kaskusnetworks.com,db@kaskusnetworks.com,romy.husodo@kaskusnetworks.com,medy.priangga@kaskusnetworks.com,ronald.seng@kaskusnetworks.com,maylina.kurniawati@kaskusnetworks.com,lisa@kaskusnetworks.com,seno@kaskusnetworks.com -u "DAILY THREAD CREATOR STATISTIC" -m "STATISTIC KREATOR PER $date_name \n\n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $data_dir/all_authordaily.csv -o tls=no -s 103.6.117.20 > /dev/null  2>&1

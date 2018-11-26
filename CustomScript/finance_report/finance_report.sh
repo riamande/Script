@@ -1,0 +1,20 @@
+#!/bin/bash
+
+DATE_END_STR=$(env TZ=Asia/Jakarta date +'%Y%m%d')
+DATE_END=$(env TZ=Asia/Jakarta date -d $DATE_END_STR +"%s") # get now 
+DATE_START_TIMESTAMP=$(env TZ=Asia/Jakarta date -d $(env TZ=Asia/Jakarta date -d "1 month ago" +'%Y/%m/%d') +"%s") # get 1 day ago
+DATE_START_DATETIME=`date -d@$DATE_START_TIMESTAMP +"%Y-%m-%d %T"`
+DATE_END_DATETIME=`date -d $DATE_END_STR +"%Y-%m-%d %T"`
+DATE_NAMING=`date -d@$DATE_START_TIMESTAMP +'%m%Y'`
+DATA_PATH="/home/rully/finance_report"
+
+#echo $DATE_END_STR $DATE_END $DATE_START_TIMESTAMP $DATE_START_DATETIME $DATE_END_DATETIME $DATE_NAMING
+
+mysql -h 172.85.0.252 -ureport -preportkaspay kp_prod -r -s -N -e "select a.uaccount, sum(a.debit), sum(a.kredit) from kaspay_account a join kaspay_transaction t on a.trxid = t.trxid left join kaspay_transaction c on a.trxid = c.trxidparent where a.datetransaction >= '$DATE_START_DATETIME' and a.datetransaction <= '$DATE_END_DATETIME' and t.trxtype = 6 and c.trxidparent is null group by a.uaccount;" |sed -e 's$\t$","$g' |sed -e 's@^@"@g' |sed -e 's@$@"@g' > $DATA_PATH/fee_$DATE_NAMING.csv
+mysql -h 172.85.0.252 -ureport -preportkaspay kp_prod -r -s -N -e "select a.id,a.uaccount,a.trxid,a.type,a.debit,a.kredit,REPLACE(a.message,'\n','') message,a.datetransaction,a.approval,a.status from kaspay_account a join kaspay_transaction t on a.trxid = t.trxid left join kaspay_transaction c on a.trxid = c.trxidparent where a.datetransaction >= '$DATE_START_DATETIME' and a.datetransaction < '$DATE_END_DATETIME' and t.trxtype = 6 and c.trxidparent is null and a.uaccount = '19472595';" |sed -e 's$\t$","$g' |sed -e 's@^@"@g' |sed -e 's@$@"@g' > $DATA_PATH/fee_sarindo_$DATE_NAMING.csv
+mysql -h 172.85.0.252 -ureport -preportkaspay kp_prod -r -s -N -e "select a.id,a.uaccount,a.trxid,a.type,a.debit,a.kredit,REPLACE(a.message,'\n','') message,a.datetransaction,a.approval,a.status from kaspay_account a join kaspay_transaction t on a.trxid = t.trxid where a.datetransaction >= '2016-08-01 00:00:00' and a.datetransaction <= '2016-08-31 23:59:59' and a.uaccount = '19472595'" |sed -e 's$\t$","$g' |sed -e 's@^@"@g' |sed -e 's@$@"@g' > $DATA_PATH/all_sarindo_$DATE_NAMING.csv
+mysql -h 172.85.0.252 -ureport -preportkaspay kp_prod -r -s -N -e "select a.uaccount, u.namalengkap, sum(a.debit), sum(a.kredit) from kaspay_account a join kaspay_transaction t on a.trxid = t.trxid join kaspay_users u on a.uaccount = u.uaccount where t.approval = 1 and a.message not like 'Penolakan%' and  ((a.datetransaction >= '$DATE_START_DATETIME' and a.datetransaction < '$DATE_END_DATETIME' and (t.instdt < '$DATE_END_DATETIME' or t.instdt is null)) or (t.trxtype = 4  and t.instdt >= '$DATE_START_DATETIME'  and t.instdt < '$DATE_END_DATETIME')) group by a.uaccount;"	|sed -e 's$\t$","$g' |sed -e 's@^@"@g' |sed -e 's@$@"@g' > $DATA_PATH/transaction_$DATE_NAMING.csv
+mysql -h 172.85.0.252 -ureport -preportkaspay kp_prod -r -s -N -e "select * from kaspay_topupsms where datetime >= $DATE_START_TIMESTAMP and datetime < $DATE_END order by id asc;" |sed -e 's$\t$","$g' |sed -e 's@^@"@g' |sed -e 's@$@"@g' > $DATA_PATH/mandiri_attempt_$DATE_NAMING.csv
+
+#sendemail -f statistic@kaskusnetworks.com -t fransisca.tanty@kaskusnetworks.com,raharja@kaskusnetworks.com,glen@kaskusnetworks.com,rully@kaskusnetworks.com -u "[automated] FEE KASPAY - $DATE_NAMING" -m "FINANCE REPORT $DATE_NAMING \n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a fee_$DATE_NAMING.csv fee_pps_$DATE_NAMING.csv transaction_$DATE_NAMING.csv mandiri_attempt_$DATE_NAMING.csv -o tls=no -s 103.6.117.20 > /dev/null  2>&1
+sendemail -f statistic@kaskusnetworks.com -t fransisca.tanty@kaskusnetworks.com,raharja@kaskusnetworks.com,glen@kaskusnetworks.com,rully@kaskusnetworks.com -u "[automated] FEE KASPAY - $DATE_NAMING" -m "FINANCE REPORT $DATE_NAMING \n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $DATA_PATH/fee_$DATE_NAMING.csv $DATA_PATH/fee_sarindo_$DATE_NAMING.csv $DATA_PATH/all_sarindo_$DATE_NAMING.csv $DATA_PATH/transaction_$DATE_NAMING.csv $DATA_PATH/mandiri_attempt_$DATE_NAMING.csv -o tls=no -s 103.6.117.20 > /dev/null  2>&1

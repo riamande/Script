@@ -1,0 +1,8 @@
+namefile="$1"
+forumid="$2"
+datestart="$3"
+dateend="$4"
+datestartts=`date -d "$datestart" +%s`
+dateendts=`date -d "$dateend" +%s`
+#mongo kaskus_forum1 --eval "printjson(db.thread.aggregate([{\$match:{forum_id:{\$in:[$forumid]},visible:1,dateline:{\$gte:$datestartts,\$lt:$dateendts}}},{\$group:{_id:null,fb:{\$sum:'\$socialMediacounter.share_fb'},gplus:{\$sum:'\$socialMediacounter.share_gplus'},twiiter:{\$sum:'\$socialMediacounter.share_twitter'},views_avg:{\$avg:'\$views'},total_thread:{\$sum:1}}}]))" |grep -v 'MongoDB shell version:\|connecting to:' > /home/rully/marketing_req/"$namefile"_"$datestart".json
+mongo kaskus_forum1 --eval "printjson(db.thread.aggregate([{\$match:{forum_id:{\$nin:[25,662,690,221,220,589,283,686,687,758,615,616,227,264,625,200,266,265,329,195,313,255,254,196,216,302,310,660,657,658,659,311,215,257,197,218,219,677,714,296,679,681,680,682,151,210,527,739,740,738,741,212,381,573,743,742,286,287,448,288,202,574,553,631,269,268,284,603,285,729,293,605,294,604,683,298,299,305,447,446,198,261,231,262,444,606,233,291,590,292,676,300,312,317,326,320,322,330,328,318,323,327,321,324,325,319,303,314,201,228,607,199,223,225,222,229,588,614,316,610,611,205,208,334,209,333,206,207,256,593,295,608,609,304,297,612,613,757]},visible:1,dateline:{\$gte:$datestartts,\$lt:$dateendts}}},{\$group:{_id:null,fb:{\$sum:'\$socialMediacounter.share_fb'},gplus:{\$sum:'\$socialMediacounter.share_gplus'},twiiter:{\$sum:'\$socialMediacounter.share_twitter'},views_avg:{\$avg:'\$views'},total_thread:{\$sum:1}}}]))" |grep -v 'MongoDB shell version:\|connecting to:' > /home/rully/marketing_req/"$namefile"_"$datestart".json

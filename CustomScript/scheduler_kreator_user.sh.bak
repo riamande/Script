@@ -1,0 +1,55 @@
+condition="$1"
+start_date=`date +%Y%m01`
+month_start=`date -d "$start_date" +%s`
+hariini=`date +%Y%m%d`
+currentday=`date -d "$hariini" +%s`
+data_dir="/home/rully/kreator_report/weekly"
+
+
+if [ "$condition" = "week" ]
+then
+subjek="WEEKLY"
+tgl_mulai=`date -d '1 week ago' "+%s"`
+  if [ $tgl_mulai -lt $month_start ]
+  then
+    tgl_mulai=$month_start
+		echo "1" > $data_dir/temp_count_week
+		counter_week=`cat $data_dir/temp_count_week`
+    else
+    tgl_mulai=$tgl_mulai
+		counter_week=`$data_dir/temp_count_week`
+		counter_week=`expr $counter_week + 1`
+		echo $counter_week > $data_dir/temp_count_week
+  fi
+	month_naming=`date -d@$month_start +"%m_%Y"`
+	file_naming='kreator_weekly_'$counter_week'_'$month_naming
+  if [ $currentday -eq $month_start ]
+    then
+      exit
+  fi
+elif [ "$condition" = "month" ]
+then
+subjek="MONTHLY"
+tgl_mulai=`date -d '1 month ago' "+%s"`
+month_naming=`date -d@$month_start +"%m_%Y"`
+file_naming='kreator_monthly_'$month_naming
+fi
+
+date_name=`date -d@$month_start +%Y-%m-%d`
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$tgl_mulai,\$lt:$currentday}},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/Warehouse_daily.temp
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$tgl_mulai,\$lt:$currentday},current_status:2},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/approve_daily.temp
+mongo 172.20.0.242/kaskus_forum1 -uriamande -pchopinnocturne92 --authenticationDatabase=admin --eval "rs.slaveOk();db.thread_warehouse.find({dateline:{\$gte:$tgl_mulai,\$lt:$currentday},current_status:1},{_id:0,userid:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' |sed 's/[^0-9]*//g' > $data_dir/pending_daily.temp
+
+cat $data_dir/Warehouse_daily.temp  |sort |uniq -c |sed 's@^  *@@g;s@  *@,@g' |awk -F $',' ' { t = $1; $1 = $2; $2 = t; print; } ' OFS=$','  > $data_dir/allthread_daily
+cat $data_dir/approve_daily.temp   |sort |uniq -c |sed 's@^  *@@g;s@  *@,@g' |awk -F $',' ' { t = $1; $1 = $2; $2 = t; print; } ' OFS=$',' > $data_dir/thread_approv_daily
+cat $data_dir/pending_daily.temp    |sort |uniq -c |sed 's@^  *@@g;s@  *@,@g' |awk -F $',' ' { t = $1; $1 = $2; $2 = t; print; } ' OFS=$',' > $data_dir/thread_pending_daily
+
+join -11 -a1 $data_dir/allthread_daily $data_dir/thread_approv_daily -o1.1,1.2,2.2 -e0 -t ','  > $data_dir/kreator_daily
+join -11 -a1 $data_dir/kreator_daily $data_dir/thread_pending_daily -o1.1,1.2,1.3,2.2 -e0 -t ',' |sed "s@^@\"$date_name\",@g"  > $data_dir/user_kreator_daily.csv
+
+#create table user_kreator_daily (userid varchar(20), date_created Date, total_thread int(11), total_thread_approv int(11), total_thread_pending int(11));
+mysqlimport --fields-terminated-by=,  --local -h 172.20.0.159 -ubackup -pkaskus  test  $data_dir/user_kreator_daily.csv;
+echo '"Date","author","thread_created","thread_approve","thread_pending"' > $data_dir/$file_naming".csv"
+mysql -h 172.20.0.159 -ubackup -pkaskus test -r -s -N -e "select * from user_kreator_daily where date_created >= $tgl_mulai and date_created < $currentday;" |sed "s/'/\'/;s/\t/\",\"/g;s/^/\"/;s/$/\"/;s/\n//g" >> $data_dir/$file_naming".csv"
+
+sendemail -f statistic@kaskusnetworks.com -t rully@kaskusnetworks.com,db@kaskusnetworks.com,romy.husodo@kaskusnetworks.com,medy.priangga@kaskusnetworks.com,ronald.seng@kaskusnetworks.com,maylina.kurniawati@kaskusnetworks.com,lisa@kaskusnetworks.com,seno@kaskusnetworks.com -u "[$subjek] KREATOR USER STATISTIC" -m "STATISTIC KREATOR USER PER $date_name \n\n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $data_dir/$file_naming".csv" -o tls=no -s 103.6.117.20 > /dev/null  2>&1

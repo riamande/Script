@@ -1,0 +1,49 @@
+#daily/monthly creator
+MYSQL_USER="percona"
+MYSQL_PASS="kaskus2014"
+datadir="/home/rully/data_thread_share/daily"
+datadir_month="/home/rully/data_thread_share/monthly"
+date_end=`date +%Y%m%d`
+cur_day=`date -d "$date_end" +%d`
+end_date=`date -d "$date_end" +%s`
+start_date=`date -d "$date_end - 1 day" +%s`
+date_naming=`date -d@$start_date +%Y%m%d`
+date_naming_month=`date -d@$start_date +%Y%m`
+date_name=`date -d@$start_date +%m/%Y`
+exclude_forum=`mysql -u$MYSQL_USER -p$MYSQL_PASS -h 172.20.0.73 forum -s -N -e "select child_list from forum_list where forum_id=25;" |sed -e 's$\,\-1$$g' |sed "s@,@','@g;s@^@'@g;s@\$@','6','8'@g"`
+mysql -u$MYSQL_USER -p$MYSQL_PASS -h 172.20.0.73 forum -r -s -N -e "select user_id from forum_user_setting where vtm_status=1;" > $datadir/creator.temp
+> $datadir/thread_all.temp
+> $datadir/thread_approved.temp
+echo '"periode","total_thread","total_users","total_thread_approved","total_user_approved","total_creator"' > $datadir/daily_creator_$date_naming".csv"
+for i in `cat $datadir/creator.temp`
+do
+mod_user=`expr $i % 500`
+mongo 172.20.0.242/kaskus_forum1 --eval "rs.slaveOk();db.mythread_$mod_user.find({thread_userid:'$i',forum_id:{\$nin:[$exclude_forum]},dateline:{\$gte:$start_date,\$lt:$end_date}},{_id:0,thread_userid:1,forum_title:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' >> $datadir/thread_all.temp
+mongo 172.20.0.242/kaskus_forum1 --eval "rs.slaveOk();db.mythread_$mod_user.find({thread_userid:'$i',forum_id:{\$nin:[$exclude_forum]},dateline:{\$gte:$start_date,\$lt:$end_date},visible:1},{_id:0,thread_userid:1,forum_title:1}).forEach(printjson)" |grep -v 'MongoDB shell version:\|connecting to:' >> $datadir/thread_approved.temp
+done
+cat $datadir/thread_all.temp >> $datadir_month/thread_all_month.temp
+cat $datadir/thread_approved.temp >> $datadir_month/thread_approved_month.temp
+
+date_name=`date -d@$start_date +%m/%d/%Y`
+total1=`cat $datadir/thread_all.temp |grep thread_userid |cut -d '"' -f4 |wc -l`
+total2=`cat $datadir/thread_all.temp |grep thread_userid |cut -d '"' -f4 |sort |uniq |wc -l`
+total3=`cat $datadir/thread_approved.temp |grep thread_userid |cut -d '"' -f4 |wc -l`
+total4=`cat $datadir/thread_approved.temp |grep thread_userid |cut -d '"' -f4 |sort |uniq |wc -l`
+total5=`cat $datadir/creator.temp |sort |uniq |wc -l`
+echo '"'$date_name'","'$total1'","'$total2'","'$total3'","'$total4'","'$total5'"' >> $datadir/daily_creator_$date_naming".csv"
+
+if [ $cur_day = '01' ]
+then
+echo '"periode","forum_name","total_thread_all"' > $date_naming_month/monthly_creator_threadall_$date_naming_month".csv"
+cat $datadir_month/thread_all_month.temp |grep '"forum_title" :' |awk -F '"forum_title" :' '{print $2}' |sed 's@^ @@g;s@ }$@@g;s@ @|@g' |sort |uniq -c |sed 's@^  *@@g' |awk '{print $2,$1;}' |sed 's@ @,"@g;s@$@"@g;s@|@ @g' |sed "s@^@\"$date_name\",@g" >> $date_naming_month/monthly_creator_threadall_$date_naming_month".csv"
+mv $datadir_month/thread_all_month.temp $datadir_month/thread_all_month$date_naming_month".temp"
+
+echo '"periode","forum_name","total_thread_approved"' > $date_naming_month/monthly_creator_threadapprove_$date_naming_month".csv"
+cat $datadir_month/thread_approved_month.temp |grep '"forum_title" :' |awk -F '"forum_title" :' '{print $2}' |sed 's@^ @@g;s@ }$@@g;s@ @|@g' |sort |uniq -c |sed 's@^  *@@g' |awk '{print $2,$1;}' |sed 's@ @,"@g;s@$@"@g;s@|@ @g' |sed "s@^@\"$date_name\",@g" >> $date_naming_month/monthly_creator_threadapprove_$date_naming_month".csv"
+mv $datadir_month/thread_approved_month.temp $datadir_month/thread_approved_month$date_naming_month".temp"
+
+sendemail -f statistic@kaskusnetworks.com -t rully@kaskusnetworks.com,db@kaskusnetworks.com,romy.husodo@kaskusnetworks.com,medy.priangga@kaskusnetworks.com,ronald.seng@kaskusnetworks.com,maylina.kurniawati@kaskusnetworks.com,lisa@kaskusnetworks.com,agnes.revian@kaskusnetworks.com -u "DAILY THREAD CREATOR STATISTIC" -m "STATISTIC THREAD CREATOR PER $date_naming \n\n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $datadir/daily_creator_$date_naming".csv" $date_naming_month/monthly_creator_threadall_$date_naming_month".csv" $date_naming_month/monthly_creator_threadapprove_$date_naming_month".csv" -o tls=no -s 103.6.117.20 > /dev/null  2>&1
+fi
+
+#sendemail -f statistic@kaskusnetworks.com -t rully@kaskusnetworks.com -u "DAILY THREAD CREATOR STATISTIC" -m "STATISTIC THREAD CREATOR PER $date_naming \n\n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $datadir/daily_creator_$date_naming".csv" -o tls=no -s 103.6.117.20 > /dev/null  2>&1
+sendemail -f statistic@kaskusnetworks.com -t rully@kaskusnetworks.com,db@kaskusnetworks.com,romy.husodo@kaskusnetworks.com,medy.priangga@kaskusnetworks.com,ronald.seng@kaskusnetworks.com,maylina.kurniawati@kaskusnetworks.com,lisa@kaskusnetworks.com,agnes.revian@kaskusnetworks.com -u "DAILY THREAD CREATOR STATISTIC" -m "STATISTIC THREAD CREATOR PER $date_naming \n\n\n Details information is attached below. \n\n\n\n Regards, \n DBA" -a $datadir/daily_creator_$date_naming".csv" -o tls=no -s 103.6.117.20 > /dev/null  2>&1
